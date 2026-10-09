@@ -1,4 +1,5 @@
 from django.urls import path
+from repayment.views import LumpSumRepaymentView
 
 from .views import (
     LoanApproveView,
@@ -6,9 +7,11 @@ from .views import (
     LoanFundsSummaryView,
     LoanInstallmentScheduleView,
     LoanListCreateView,
+    LoanNextInstallmentView,
     LoanRejectView,
     LoanReviewListView,
 )
+from repayment.views import LumpSumRepaymentView
 
 
 urlpatterns = [
@@ -19,4 +22,6 @@ urlpatterns = [
     path('<uuid:loan_id>/approve/', LoanApproveView.as_view(), name='loan-approve'),
     path('<uuid:loan_id>/reject/', LoanRejectView.as_view(), name='loan-reject'),
     path('<uuid:loan_id>/installments/', LoanInstallmentScheduleView.as_view(), name='loan-installments'),
+    path('<uuid:loan_id>/installments/next/', LoanNextInstallmentView.as_view(), name='loan-next-installment'),
+    path('<uuid:loan_id>/repayments/lump-sum/', LumpSumRepaymentView.as_view(), name='loan-lump-sum-repayment'),
 ]

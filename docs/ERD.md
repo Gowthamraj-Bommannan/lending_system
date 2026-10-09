@@ -4,16 +4,18 @@ This document separates what is **implemented in the configured PostgreSQL datab
 
 ## Application tables
 
-The application's five domain tables are `employee`, `employee_role`, `contribution`, `loan`, and `repayment`. No organization, fund-account, ledger-entry, or interest-allocation table exists in the current physical database.
+The application's six domain tables are `employee`, `employee_role`, `contribution`, `loan`, `loan_review`, and `repayment`. No organization, fund-account, ledger-entry, or interest-allocation table exists in the current physical database.
 
 ```mermaid
 erDiagram
     EMPLOYEE ||--o{ EMPLOYEE_ROLE : assigned_roles
-    EMPLOYEE ||--o{ CONTRIBUTION : owns
+    EMPLOYEE ||--o{ CONTRIBUTION : contributes
     EMPLOYEE o|--o{ CONTRIBUTION : cancels
     EMPLOYEE ||--o{ LOAN : requests
     EMPLOYEE o|--o{ LOAN : reviews
     EMPLOYEE o|--o{ LOAN : completed_by_after_repayment
+    LOAN ||--o{ LOAN_REVIEW : has_decisions
+    EMPLOYEE ||--o{ LOAN_REVIEW : reviews
     EMPLOYEE ||--o{ REPAYMENT : records
     LOAN ||--o{ REPAYMENT : receives
 
@@ -43,7 +45,7 @@ erDiagram
     CONTRIBUTION {
         bigint id PK
         varchar transaction_id UK
-        bigint employee_id FK
+        bigint contributor_employee_id FK
         decimal amount
         varchar status
         datetime contributed_at
@@ -60,7 +62,7 @@ erDiagram
         bigint id PK
         uuid loan_id UK
         varchar transaction_id UK "nullable until approval"
-        bigint employee_id FK
+        bigint borrower_employee_id FK
         decimal requested_amount
         varchar request_reason
         smallint repayment_term_months "1 to 12 months"
@@ -69,12 +71,23 @@ erDiagram
         varchar status
         datetime requested_at
         datetime reviewed_at
-        bigint reviewed_by_id FK "nullable"
+        bigint reviewed_by_employee_id FK "nullable"
         varchar decision_reason
         datetime completed_at
-        bigint completed_by_id FK "nullable"
+        bigint completed_by_employee_id FK "nullable"
         datetime created_at
         datetime updated_at
+    }
+
+    LOAN_REVIEW {
+        bigint id PK
+        bigint loan_id FK
+        bigint reviewed_by_employee_id FK
+        varchar decision "APPROVED or REJECTED"
+        datetime reviewed_at
+        varchar decision_reason
+        decimal approved_amount "nullable"
+        decimal interest_rate "nullable"
     }
 
     REPAYMENT {
@@ -83,7 +96,8 @@ erDiagram
         varchar transaction_id UK
         bigint loan_id FK
         bigint recorded_by_id FK
-        smallint installment_number
+        varchar payment_type "INSTALLMENT or LUMP_SUM"
+        smallint installment_number "nullable for lump sum"
         decimal principal_amount
         decimal interest_amount
         decimal total_amount
@@ -94,7 +108,7 @@ erDiagram
 
 ## Complete lending domain (current + planned apps)
 
-The following is the target domain ERD across the current and future app boundaries. `EMPLOYEE`, `EMPLOYEE_ROLE`, `CONTRIBUTION`, `LOAN`, and `REPAYMENT` are implemented. `INTEREST_ALLOCATION` and `LEDGER_ENTRY` are proposed for future accounting work and must not be treated as deployed tables yet. The `_PLANNED` suffixes in this diagram label future entities; they are not literal Django table names.
+The following is the target domain ERD across the current and future app boundaries. `EMPLOYEE`, `EMPLOYEE_ROLE`, `CONTRIBUTION`, `LOAN`, `LOAN_REVIEW`, and `REPAYMENT` are implemented. `INTEREST_ALLOCATION` and `LEDGER_ENTRY` are proposed for future accounting work and must not be treated as deployed tables yet. The `_PLANNED` suffixes in this diagram label future entities; they are not literal Django table names.
 
 ```mermaid
 erDiagram
@@ -104,13 +118,15 @@ erDiagram
     EMPLOYEE ||--o{ LOAN : requests
     EMPLOYEE o|--o{ LOAN : reviews
     EMPLOYEE o|--o{ LOAN : completed_by_after_repayment
+    LOAN ||--o{ LOAN_REVIEW : has_decisions
+    EMPLOYEE ||--o{ LOAN_REVIEW : reviews
     LOAN ||--o{ REPAYMENT : repaid_by
     EMPLOYEE ||--o{ REPAYMENT : records_payment
-    REPAYMENT ||--o{ INTEREST_ALLOCATION_PLANNED : allocates_interest
-    EMPLOYEE ||--o{ INTEREST_ALLOCATION_PLANNED : receives_interest
-    CONTRIBUTION o|--o{ LEDGER_ENTRY_PLANNED : source_contribution
-    LOAN o|--o{ LEDGER_ENTRY_PLANNED : source_loan
-    REPAYMENT o|--o{ LEDGER_ENTRY_PLANNED : source_repayment
+    REPAYMENT ||--o{ INTEREST_ALLOCATION : allocates_interest
+    EMPLOYEE ||--o{ INTEREST_ALLOCATION : receives_interest
+    CONTRIBUTION o|--o{ LEDGER_ENTRY : source_contribution
+    LOAN o|--o{ LEDGER_ENTRY : source_loan
+    REPAYMENT o|--o{ LEDGER_ENTRY : source_repayment
 
     EMPLOYEE {
         bigint id PK
@@ -133,7 +149,7 @@ erDiagram
     CONTRIBUTION {
         bigint id PK
         varchar transaction_id UK
-        bigint employee_id FK
+        bigint contributor_employee_id FK
         decimal amount
         varchar status
         datetime contributed_at
@@ -148,7 +164,7 @@ erDiagram
         bigint id PK
         uuid loan_id UK
         varchar transaction_id UK "NULL until approval"
-        bigint employee_id FK
+        bigint borrower_employee_id FK
         decimal requested_amount
         varchar request_reason
         smallint repayment_term_months
@@ -157,10 +173,21 @@ erDiagram
         varchar status "PENDING, APPROVED, REJECTED, COMPLETED"
         datetime requested_at
         datetime reviewed_at
-        bigint reviewed_by_id FK
+        bigint reviewed_by_employee_id FK
         varchar decision_reason
         datetime completed_at
-        bigint completed_by_id FK
+        bigint completed_by_employee_id FK
+    }
+
+    LOAN_REVIEW {
+        bigint id PK
+        bigint loan_id FK
+        bigint reviewed_by_employee_id FK
+        varchar decision
+        datetime reviewed_at
+        varchar decision_reason
+        decimal approved_amount
+        decimal interest_rate
     }
 
     REPAYMENT {
@@ -176,7 +203,7 @@ erDiagram
         datetime created_at
     }
 
-    INTEREST_ALLOCATION_PLANNED {
+    INTEREST_ALLOCATION {
         bigint id PK
         bigint repayment_id FK
         bigint contributor_employee_id FK
@@ -185,7 +212,7 @@ erDiagram
         datetime created_at
     }
 
-    LEDGER_ENTRY_PLANNED {
+    LEDGER_ENTRY {
         bigint id PK
         varchar entry_type
         varchar direction
@@ -203,7 +230,7 @@ erDiagram
 | --- | --- | --- |
 | `employee` | `employee`, `employee_role` | Implemented identity, authentication, and role assignment. |
 | `contribution` | `contribution` | Implemented contributions and cancellation history. Contributions are active immediately. |
-| `loan` | `loan` | Implemented requests and decisions. Fully repaid loans transition automatically to `COMPLETED`; no `DISBURSED` status. |
+| `loan` | `loan`, `loan_review` | Implemented requests, current decision snapshot, and approval/rejection history. Fully repaid loans transition automatically to `COMPLETED`; no `DISBURSED` status. |
 | `repayment` | `repayment` | Implemented borrower repayment records, principal balance validation, and automatic loan completion. |
 | Future interest/accounting app | `interest_allocation`, `ledger_entry` | Proposed distribution audit and append-only fund transaction history; not implemented. |
 | `common` | No database tables | Shared rules, exceptions, logging, and utilities. |
@@ -276,11 +303,15 @@ These are present in the database for framework operation, but are not part of t
 - A loan's `loan_id` identifies a request from creation. `transaction_id` is nullable until approval.
 - A database constraint requires approved terms and a transaction ID for `APPROVED`/`COMPLETED` loans, while `PENDING`/`REJECTED` loans have no transaction ID or approved terms.
 - A partial unique constraint permits at most one `PENDING` or `APPROVED` loan per employee.
+- Loan borrower, reviewer, and completion actor FKs use the explicit columns `borrower_employee_id`, `reviewed_by_employee_id`, and `completed_by_employee_id`.
+- Loan approval/rejection decisions are retained in `loan_review`; the loan row also stores its latest decision snapshot.
 - Each repayment stores principal, interest, and total; a database check enforces `total = principal + interest`.
 - A borrower can repay only their own `APPROVED` loan, and principal cannot exceed remaining principal.
 - Available funds are calculated by application logic as active contributions minus remaining approved-loan principal; principal repayment releases funds. No separate balance table is used.
 - A loan becomes `COMPLETED` automatically when its approved principal has been fully repaid.
 - Repayment records carry generated transaction IDs and a sequential installment number unique within each loan.
+- Repayment records distinguish `INSTALLMENT` from `LUMP_SUM`; lump sums have a null installment number and are listed separately from the installment schedule.
+- Cancelled contributions remain stored with cancellation actor, timestamp, and reason. Admin deletion is disabled for contribution, loan, and repayment records; financial reversal entries are not implemented yet.
 - Loan repayment term is 1–12 months; total flat interest is calculated for the selected term, and monthly cent-rounding is reconciled in the final installment.
 
 ## Historical migration notes

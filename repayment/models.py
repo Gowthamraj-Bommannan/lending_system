@@ -7,6 +7,10 @@ from django.utils import timezone
 
 
 class Repayment(models.Model):
+    class PaymentType(models.TextChoices):
+        INSTALLMENT = 'INSTALLMENT', 'Installment'
+        LUMP_SUM = 'LUMP_SUM', 'Lump sum'
+
     repayment_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     transaction_id = models.CharField(max_length=40, unique=True, editable=False)
     loan = models.ForeignKey(
@@ -14,7 +18,12 @@ class Repayment(models.Model):
         on_delete=models.PROTECT,
         related_name='repayments',
     )
-    installment_number = models.PositiveSmallIntegerField()
+    installment_number = models.PositiveSmallIntegerField(null=True, blank=True)
+    payment_type = models.CharField(
+        max_length=12,
+        choices=PaymentType.choices,
+        default=PaymentType.INSTALLMENT,
+    )
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -31,8 +40,11 @@ class Repayment(models.Model):
         ordering = ('-paid_at', '-id')
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(principal_amount__gt=0),
-                name='repayment_principal_positive',
+                condition=(
+                    models.Q(payment_type='INSTALLMENT', principal_amount__gt=0)
+                    | models.Q(payment_type='LUMP_SUM', principal_amount__gte=0)
+                ),
+                name='repayment_principal_valid_for_payment_type',
             ),
             models.CheckConstraint(
                 condition=models.Q(interest_amount__gte=0),
@@ -43,12 +55,23 @@ class Repayment(models.Model):
                 name='repayment_total_matches_components',
             ),
             models.CheckConstraint(
+                condition=models.Q(total_amount__gt=0),
+                name='repayment_total_positive',
+            ),
+            models.CheckConstraint(
                 condition=models.Q(installment_number__gte=1),
                 name='repayment_installment_number_positive',
             ),
             models.UniqueConstraint(
                 fields=('loan', 'installment_number'),
                 name='unique_loan_repayment_installment',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(payment_type='INSTALLMENT', installment_number__isnull=False)
+                    | models.Q(payment_type='LUMP_SUM', installment_number__isnull=True)
+                ),
+                name='repayment_type_matches_installment_number',
             ),
         ]
 

@@ -19,11 +19,13 @@ API_OPERATIONS = {
     ('loan-review-list', 'GET'): ('Pending and approved loan review list retrieval', 'api.loan.review.list'),
     ('loan-detail', 'GET'): ('Loan detail retrieval', 'api.loan.retrieve'),
     ('loan-installments', 'GET'): ('Loan installment schedule retrieval', 'api.loan.installments'),
+    ('loan-next-installment', 'GET'): ('Next loan installment retrieval', 'api.loan.installments.next'),
     ('loan-funds-summary', 'GET'): ('Available funds summary retrieval', 'api.loan.funds.summary'),
     ('loan-approve', 'POST'): ('Loan approval', 'api.loan.approve'),
     ('loan-reject', 'POST'): ('Loan rejection', 'api.loan.reject'),
     ('repayment-list-create', 'GET'): ('Repayment list retrieval', 'api.repayment.list'),
     ('repayment-list-create', 'POST'): ('Loan repayment submission', 'api.repayment.create'),
+    ('loan-lump-sum-repayment', 'POST'): ('Lump-sum loan repayment', 'api.repayment.lump_sum'),
 }
 
 PROJECT_ERROR_LOG_MESSAGES = {
@@ -60,6 +62,9 @@ PROJECT_ERROR_LOG_MESSAGES = {
     'repayment_principal_exceeds_remaining': 'Repayment was rejected because principal exceeds the remaining loan balance.',
     'repayment_installment_out_of_order': 'Repayment was rejected because installments must be paid in order.',
     'repayment_amount_does_not_match_installment': 'Repayment was rejected because amounts do not match the scheduled installment.',
+    'repayment_principal_cannot_be_negative': 'Lump-sum repayment was rejected because principal cannot be negative.',
+    'lump_sum_amount_exceeds_balance': 'Lump-sum repayment was rejected because it exceeds the remaining loan balance.',
+    'lump_sum_must_clear_interest_with_final_principal': 'Full principal payoff was rejected because remaining scheduled interest must also be paid.',
 }
 
 

@@ -36,6 +36,14 @@ def add_calendar_months(value, months):
 def _money(value):
     return value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
+def get_total_contract_interest(loan):
+    return _money(
+        loan.approved_amount
+        * loan.interest_rate
+        * loan.repayment_term_months
+        / Decimal('1200'),
+    )
+
 
 def get_loan_installment_schedule(loan):
     """Calculate fixed-principal/flat-interest installments for an approved loan."""
@@ -46,32 +54,53 @@ def get_loan_installment_schedule(loan):
         )
 
     start_date = loan.reviewed_at or loan.requested_at
-    total_interest = _money(
-        loan.approved_amount
-        * loan.interest_rate
-        * loan.repayment_term_months
-        / Decimal('1200'),
-    )
-    paid_installments = set(
-        loan.repayments.values_list('installment_number', flat=True),
-    )
+    total_interest = get_total_contract_interest(loan)
+    installment_repayments = {
+        repayment.installment_number: repayment
+        for repayment in loan.repayments.filter(
+            payment_type='INSTALLMENT',
+            installment_number__isnull=False,
+        )
+    }
+    paid_installments = set(installment_repayments)
     if loan.status == Loan.Status.COMPLETED:
         paid_installments.update(range(1, loan.repayment_term_months + 1))
+
+    principal_paid = loan.repayments.aggregate(total=Sum('principal_amount'))['total'] or Decimal('0.00')
+    interest_paid = loan.repayments.aggregate(total=Sum('interest_amount'))['total'] or Decimal('0.00')
+    remaining_principal = max(Decimal('0.00'), loan.approved_amount - principal_paid)
+    remaining_interest = max(Decimal('0.00'), total_interest - interest_paid)
+    remaining_installment_count = loan.repayment_term_months - len(paid_installments)
 
     installments = []
     previous_principal_total = Decimal('0.00')
     previous_interest_total = Decimal('0.00')
     for installment_number in range(1, loan.repayment_term_months + 1):
-        cumulative_principal = _money(
-            loan.approved_amount * installment_number / loan.repayment_term_months,
-        )
-        principal_due = cumulative_principal - previous_principal_total
-        previous_principal_total = cumulative_principal
-        cumulative_interest = _money(
-            total_interest * installment_number / loan.repayment_term_months,
-        )
-        interest_due = cumulative_interest - previous_interest_total
-        previous_interest_total = cumulative_interest
+        if installment_number in installment_repayments:
+            recorded = installment_repayments[installment_number]
+            principal_due = recorded.principal_amount
+            interest_due = recorded.interest_amount
+        elif loan.status == Loan.Status.COMPLETED:
+            principal_due = Decimal('0.00')
+            interest_due = Decimal('0.00')
+        else:
+            unpaid_position = installment_number - len(
+                [number for number in paid_installments if number < installment_number]
+            )
+            if remaining_installment_count <= 0:
+                principal_due = Decimal('0.00')
+                interest_due = Decimal('0.00')
+            else:
+                cumulative_principal = _money(
+                    remaining_principal * unpaid_position / remaining_installment_count,
+                )
+                principal_due = cumulative_principal - previous_principal_total
+                previous_principal_total = cumulative_principal
+                cumulative_interest = _money(
+                    remaining_interest * unpaid_position / remaining_installment_count,
+                )
+                interest_due = cumulative_interest - previous_interest_total
+                previous_interest_total = cumulative_interest
         installments.append({
             'installment_number': installment_number,
             'due_date': add_calendar_months(start_date, installment_number).date(),
@@ -94,6 +123,14 @@ def get_loan_installment_schedule(loan):
         'current_installment': unpaid[0] if unpaid else None,
         'next_installment': unpaid[1] if len(unpaid) > 1 else None,
         'installments': installments,
+        'lump_sum_payments': list(
+            loan.repayments.filter(payment_type='LUMP_SUM')
+            .order_by('paid_at', 'pk')
+            .values(
+                'transaction_id', 'payment_type', 'principal_amount', 'interest_amount',
+                'total_amount', 'paid_at',
+            ),
+        ),
     }
 
 
@@ -170,7 +207,7 @@ def _validate_employee_eligibility(employee, *, exclude_loan_id=None):
 
 
 def _validate_decider(loan, actor):
-    if loan.employee_id == actor.pk:
+    if loan.borrower_employee_id == actor.pk:
         raise ProjectException(
             ErrorMessages.LOAN_SELF_DECISION_RESTRICTED,
             code='loan_self_decision_restricted',
@@ -207,7 +244,7 @@ def create_loan(*, employee, requested_amount, request_reason, repayment_term_mo
     employee = employee.__class__.objects.select_for_update().get(pk=employee.pk)
     _validate_employee_eligibility(employee)
     loan = Loan.objects.create(
-        employee=employee,
+        borrower_employee=employee,
         requested_amount=requested_amount,
         request_reason=request_reason,
         repayment_term_months=repayment_term_months,
@@ -228,7 +265,7 @@ def create_loan(*, employee, requested_amount, request_reason, repayment_term_mo
 @transaction.atomic
 def approve_loan(*, loan, actor, approved_amount=None):
     lock_fund_rows()
-    loan = Loan.objects.select_for_update().select_related('employee').get(pk=loan.pk)
+    loan = Loan.objects.select_for_update().select_related('borrower_employee').get(pk=loan.pk)
     _validate_decider(loan, actor)
     if loan.status != Loan.Status.PENDING:
         raise ProjectException(
@@ -254,13 +291,23 @@ def approve_loan(*, loan, actor, approved_amount=None):
     loan.approved_amount = approved_amount
     loan.interest_rate = ANNUAL_INTEREST_RATE
     loan.status = Loan.Status.APPROVED
-    loan.reviewed_by = actor
+    loan.reviewed_by_employee = actor
     loan.reviewed_at = timezone.now()
     loan.transaction_id = f'LOAN-{timezone.now():%Y%m%d}-{uuid.uuid4().hex[:12].upper()}'
     loan.save(update_fields=(
-        'approved_amount', 'interest_rate', 'status', 'reviewed_by',
+        'approved_amount', 'interest_rate', 'status', 'reviewed_by_employee',
         'reviewed_at', 'transaction_id', 'updated_at',
     ))
+    from .models import LoanReview
+
+    LoanReview.objects.create(
+        loan=loan,
+        reviewed_by_employee=actor,
+        decision=LoanReview.Decision.APPROVED,
+        reviewed_at=loan.reviewed_at,
+        approved_amount=approved_amount,
+        interest_rate=loan.interest_rate,
+    )
     loan_id = str(loan.loan_id)
     transaction.on_commit(
         lambda: logger.info(
@@ -275,7 +322,7 @@ def approve_loan(*, loan, actor, approved_amount=None):
 
 @transaction.atomic
 def reject_loan(*, loan, actor, reason):
-    loan = Loan.objects.select_for_update().select_related('employee').get(pk=loan.pk)
+    loan = Loan.objects.select_for_update().select_related('borrower_employee').get(pk=loan.pk)
     _validate_decider(loan, actor)
     if loan.status != Loan.Status.PENDING:
         raise ProjectException(ErrorMessages.LOAN_NOT_PENDING, code='loan_not_pending')
@@ -283,10 +330,19 @@ def reject_loan(*, loan, actor, reason):
     if not reason:
         raise ProjectException(ErrorMessages.LOAN_REJECTION_REASON_REQUIRED, code='loan_rejection_reason_required')
     loan.status = Loan.Status.REJECTED
-    loan.reviewed_by = actor
+    loan.reviewed_by_employee = actor
     loan.reviewed_at = timezone.now()
     loan.decision_reason = reason
-    loan.save(update_fields=('status', 'reviewed_by', 'reviewed_at', 'decision_reason', 'updated_at'))
+    loan.save(update_fields=('status', 'reviewed_by_employee', 'reviewed_at', 'decision_reason', 'updated_at'))
+    from .models import LoanReview
+
+    LoanReview.objects.create(
+        loan=loan,
+        reviewed_by_employee=actor,
+        decision=LoanReview.Decision.REJECTED,
+        reviewed_at=loan.reviewed_at,
+        decision_reason=reason,
+    )
     loan_id = str(loan.loan_id)
     transaction.on_commit(
         lambda: logger.info(

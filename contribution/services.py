@@ -51,7 +51,7 @@ def create_contribution(*, employee, amount, reference='', remarks=''):
     validate_employee_contribution_capacity(employee, amount)
 
     contribution = Contribution.objects.create(
-        employee=employee,
+        contributor_employee=employee,
         amount=amount,
         reference=reference,
         remarks=remarks,
@@ -100,7 +100,7 @@ def cancel_contribution(*, contribution, cancelled_by, reason):
         'status', 'cancelled_at', 'cancelled_by', 'cancellation_reason', 'updated_at',
     ))
     transaction_id = contribution.transaction_id
-    owner_key = get_log_actor_key(contribution.employee)
+    owner_key = get_log_actor_key(contribution.contributor_employee)
     transaction.on_commit(
         lambda: logger.info(
             'Contribution cancelled successfully. event=contribution.cancelled '

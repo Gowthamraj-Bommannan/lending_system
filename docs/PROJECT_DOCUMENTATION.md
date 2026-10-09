@@ -173,6 +173,7 @@ GET    /api/loans/review/
 GET    /api/loans/funds/summary/
 GET    /api/loans/{loan_id}/
 GET    /api/loans/{loan_id}/installments/
+GET    /api/loans/{loan_id}/installments/next/
 POST   /api/loans/{loan_id}/approve/
 POST   /api/loans/{loan_id}/reject/
 ```
@@ -187,7 +188,7 @@ New loan requests are rejected if the employee has a `PENDING` or `APPROVED` loa
 
 The current repayment plan is **flat annual interest with fixed principal installments**: interest is calculated on the original approved principal for the selected term (`approved_amount × annual rate × term_months ÷ 12`) and does not decrease as principal is repaid. Principal and total interest are split across the term, with any cent-rounding remainder applied to the last installment. For example, 30,000 at 10% p.a. over 12 months yields 2,500 principal plus 250 interest each month, or 2,750 total. This is not a reducing-balance EMI calculation.
 
-`GET /api/loans/{loan_id}/installments/` returns the calculated schedule plus `current_installment` (first unpaid) and `next_installment`. A pending loan has no schedule; completed loans return no unpaid current or next installment. Repayments must be submitted in installment order and match the calculated principal, interest, and total exactly.
+`GET /api/loans/{loan_id}/installments/` returns the full calculated schedule plus `current_installment` (first unpaid) and `next_installment`. `GET /api/loans/{loan_id}/installments/next/` returns only the first unpaid installment, or `null` if the loan has no unpaid installments. A pending loan has no schedule. Repayments must be submitted in installment order and match the calculated principal, interest, and total exactly.
 
 ### Current repayment APIs
 
@@ -196,9 +197,22 @@ Only the employee who owns an approved loan can make repayments. `GET /api/repay
 ```text
 POST   /api/repayments/
 GET    /api/repayments/
+POST   /api/loans/{loan_id}/repayments/lump-sum/
 ```
 
-The request supplies `loan_id`, `installment_number`, `principal_amount`, `interest_amount`, and `total_amount`. The installment must be the earliest unpaid installment, and the three amounts must match the server-calculated schedule exactly. Principal must be positive and cannot exceed remaining principal; interest cannot be negative; total must equal principal plus interest. Repayment validation and financial state changes are performed by the repayment service. Interest amounts are recorded, but distribution to contributors is not implemented yet.
+The installment request supplies `loan_id`, `installment_number`, `principal_amount`, `interest_amount`, and `total_amount`. The installment must be the earliest unpaid installment, and the amounts must match the server-calculated schedule exactly. Principal must be positive and cannot exceed remaining principal; interest cannot be negative; total must equal principal plus interest.
+
+For a partial prepayment or full payoff outside the scheduled installment amount, use `POST /api/loans/{loan_id}/repayments/lump-sum/`. Submit `principal_amount`, `interest_amount`, and `total_amount`; the same owner, approval, balance, and arithmetic checks apply. This creates a `LUMP_SUM` repayment record (with no installment number). It appears separately in the loan schedule response, and outstanding principal/interest are redistributed across the installments that remain unpaid. If the lump sum pays the final principal, it must also cover all remaining scheduled flat interest, and the loan is completed. Interest amounts are recorded, but distribution to contributors is not implemented yet.
+
+Lump-sum request example:
+
+```json
+{
+    "principal_amount": "5000.00",
+    "interest_amount": "500.00",
+    "total_amount": "5500.00"
+}
+```
 
 Each saved repayment receives a unique, system-generated `transaction_id` such as `REPAY-20260930-12AB34CD56EF`. Clients must not send this field; it is returned in the repayment response and can be used as the human-readable payment reference.
 
@@ -257,7 +271,7 @@ A custom Django user table, based on `AbstractBaseUser` and `PermissionsMixin`:
 
 ### Contribution
 
-- `employee`
+- `contributor_employee` (`contributor_employee_id` database column)
 - `amount`
 - `status`: `ACTIVE`, `CANCELLED`
 - `transaction_id`
@@ -269,7 +283,7 @@ A custom Django user table, based on `AbstractBaseUser` and `PermissionsMixin`:
 
 - `loan_id` (UUID request identifier)
 - `transaction_id` (nullable until approval)
-- `employee`
+- `borrower_employee` (`borrower_employee_id` database column)
 - `requested_amount`
 - `request_reason` (required; maximum 1000 characters)
 - `repayment_term_months` (1–12; legacy loans default to 12)
@@ -277,9 +291,22 @@ A custom Django user table, based on `AbstractBaseUser` and `PermissionsMixin`:
 - `interest_rate`
 - `status`: `PENDING`, `APPROVED`, `REJECTED`, `COMPLETED`
 - `requested_at`
-- reviewer, review timestamp, and decision reason
+- `reviewed_by_employee`, review timestamp, and latest decision reason
 - `completed_at`
-- `completed_by` (set to the borrower when full principal is repaid)
+- `completed_by_employee` (set to the borrower when full principal is repaid)
+
+### LoanReview
+
+- `loan`
+- `reviewed_by_employee`
+- `decision`: `APPROVED` or `REJECTED`
+- `reviewed_at`
+- `decision_reason`
+- approved amount and interest-rate snapshots (approval records only)
+
+Each successful loan approval or rejection creates an append-only review-history row in the same database transaction as updating the current loan decision fields.
+
+Loan API responses include a read-only `review_history` collection so borrowers and authorized reviewers can see the decision record. The loan review queue still lists pending/approved requests; it is not a separate history table endpoint.
 
 ### Repayment
 
@@ -294,6 +321,8 @@ A custom Django user table, based on `AbstractBaseUser` and `PermissionsMixin`:
 - `paid_at`
 
 There are currently no active `InterestAllocation`, `FundAccount`, or ledger models. The earlier applied draft loan migration created legacy fund tables in some databases; cleanup removes them when empty and preserves existing data rather than deleting it. All money values use `Decimal`. Available funds are calculated from active contributions minus remaining approved-loan principal.
+
+Contribution cancellation updates status and retains cancellation metadata instead of deleting the contribution. The Django admin is configured not to delete contributions, loans, or repayments. A formal reversal workflow is not yet implemented because the ledger/reversal design is deferred.
 
 ## 7. Conceptual Future ERD (not current schema)
 

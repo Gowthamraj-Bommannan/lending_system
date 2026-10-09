@@ -8,8 +8,8 @@ from .services import create_contribution
 
 
 class ContributionSerializer(serializers.ModelSerializer):
-    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    employee_email = serializers.EmailField(source='employee.email', read_only=True)
+    employee_id = serializers.CharField(source='contributor_employee.employee_id', read_only=True)
+    employee_email = serializers.EmailField(source='contributor_employee.email', read_only=True)
 
     class Meta:
         model = Contribution

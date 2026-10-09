@@ -11,7 +11,7 @@ class Contribution(models.Model):
         CANCELLED = 'CANCELLED', 'Cancelled'
 
     transaction_id = models.CharField(max_length=40, unique=True, editable=False)
-    employee = models.ForeignKey(
+    contributor_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='contributions',

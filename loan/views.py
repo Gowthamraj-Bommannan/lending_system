@@ -40,9 +40,9 @@ class LoanListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = Loan.objects.select_related(
-            'employee', 'reviewed_by', 'completed_by',
-        )
-        return queryset.filter(employee=self.request.user)
+            'borrower_employee', 'reviewed_by_employee', 'completed_by_employee',
+        ).prefetch_related('review_history')
+        return queryset.filter(borrower_employee=self.request.user)
 
     def create(self, request, *args, **kwargs):
         request_serializer = self.get_serializer(data=request.data)
@@ -57,10 +57,12 @@ class LoanDetailView(generics.RetrieveAPIView):
     lookup_field = 'loan_id'
 
     def get_queryset(self):
-        queryset = Loan.objects.select_related('employee', 'reviewed_by', 'completed_by')
+        queryset = Loan.objects.select_related(
+            'borrower_employee', 'reviewed_by_employee', 'completed_by_employee',
+        ).prefetch_related('review_history')
         if _can_review(self.request.user):
             return queryset
-        return queryset.filter(employee=self.request.user)
+        return queryset.filter(borrower_employee=self.request.user)
 
 
 class LoanInstallmentScheduleView(LoanDetailView):
@@ -71,6 +73,15 @@ class LoanInstallmentScheduleView(LoanDetailView):
         return Response(get_loan_installment_schedule(loan))
 
 
+class LoanNextInstallmentView(LoanDetailView):
+    """Return only the first unpaid installment, or null if none remains."""
+
+    def retrieve(self, request, *args, **kwargs):
+        loan = self.get_object()
+        schedule = get_loan_installment_schedule(loan)
+        return Response(schedule['current_installment'])
+
+
 class LoanReviewListView(generics.ListAPIView):
     """Expose pending and approved loans to administrators and approvers."""
 
@@ -79,8 +90,8 @@ class LoanReviewListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Loan.objects.select_related(
-            'employee', 'reviewed_by', 'completed_by',
-        ).filter(
+            'borrower_employee', 'reviewed_by_employee', 'completed_by_employee',
+        ).prefetch_related('review_history').filter(
             status__in=(Loan.Status.PENDING, Loan.Status.APPROVED),
         )
 

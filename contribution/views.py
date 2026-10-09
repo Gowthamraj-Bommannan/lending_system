@@ -15,10 +15,10 @@ class ContributionListCreateView(generics.ListCreateAPIView):
     permission_classes = (IsActiveEmployeeOrAdmin,)
 
     def get_queryset(self):
-        queryset = Contribution.objects.select_related('employee', 'cancelled_by')
+        queryset = Contribution.objects.select_related('contributor_employee', 'cancelled_by')
         if self.request.user.is_superuser:
             return queryset
-        return queryset.filter(employee=self.request.user)
+        return queryset.filter(contributor_employee=self.request.user)
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -36,7 +36,7 @@ class ContributionSummaryView(generics.GenericAPIView):
         queryset = Contribution.objects.all()
         if self.request.user.is_superuser:
             return queryset
-        return queryset.filter(employee=self.request.user)
+        return queryset.filter(contributor_employee=self.request.user)
 
     def get(self, request, *args, **kwargs):
         return Response(get_contribution_summary(self.get_queryset()))
@@ -48,16 +48,16 @@ class ContributionDetailView(generics.RetrieveAPIView):
     lookup_field = 'transaction_id'
 
     def get_queryset(self):
-        queryset = Contribution.objects.select_related('employee', 'cancelled_by')
+        queryset = Contribution.objects.select_related('contributor_employee', 'cancelled_by')
         if self.request.user.is_superuser:
             return queryset
-        return queryset.filter(employee=self.request.user)
+        return queryset.filter(contributor_employee=self.request.user)
 
 
 class ContributionCancelView(generics.GenericAPIView):
     serializer_class = ContributionCancelSerializer
     permission_classes = (IsSuperAdmin,)
-    queryset = Contribution.objects.select_related('employee', 'cancelled_by')
+    queryset = Contribution.objects.select_related('contributor_employee', 'cancelled_by')
     lookup_field = 'transaction_id'
 
     def post(self, request, *args, **kwargs):

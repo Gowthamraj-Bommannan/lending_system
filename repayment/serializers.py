@@ -41,6 +41,37 @@ class RepaymentCreateSerializer(serializers.Serializer):
         return attrs
 
 
+class LumpSumRepaymentSerializer(serializers.Serializer):
+    principal_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    interest_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        default=Decimal('0.00'),
+    )
+    total_amount = serializers.DecimalField(max_digits=13, decimal_places=2)
+
+    def validate(self, attrs):
+        principal = attrs['principal_amount']
+        interest = attrs['interest_amount']
+        if principal < 0:
+            raise ProjectException(
+                ErrorMessages.REPAYMENT_PRINCIPAL_CANNOT_BE_NEGATIVE,
+                code='repayment_principal_cannot_be_negative',
+            )
+        if interest < 0:
+            raise ProjectException(
+                ErrorMessages.REPAYMENT_INTEREST_CANNOT_BE_NEGATIVE,
+                code='repayment_interest_cannot_be_negative',
+            )
+        if attrs['total_amount'] <= 0 or attrs['total_amount'] != principal + interest:
+            raise ProjectException(
+                ErrorMessages.REPAYMENT_TOTAL_MUST_MATCH_COMPONENTS,
+                code='repayment_total_mismatch',
+            )
+        return attrs
+
+
 class RepaymentSerializer(serializers.ModelSerializer):
     loan_id = serializers.UUIDField(source='loan.loan_id', read_only=True)
     loan_transaction_id = serializers.CharField(source='loan.transaction_id', read_only=True)
@@ -49,6 +80,6 @@ class RepaymentSerializer(serializers.ModelSerializer):
         model = Repayment
         fields = (
             'repayment_id', 'transaction_id', 'loan_id', 'loan_transaction_id', 'principal_amount',
-            'installment_number', 'interest_amount', 'total_amount', 'paid_at',
+            'payment_type', 'installment_number', 'interest_amount', 'total_amount', 'paid_at',
         )
         read_only_fields = fields

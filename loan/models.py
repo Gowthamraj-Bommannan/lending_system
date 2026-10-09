@@ -20,7 +20,7 @@ class Loan(models.Model):
         blank=True,
         editable=False,
     )
-    employee = models.ForeignKey(
+    borrower_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='loans',
@@ -37,7 +37,7 @@ class Loan(models.Model):
     )
     requested_at = models.DateTimeField(default=timezone.now)
     reviewed_at = models.DateTimeField(null=True, blank=True)
-    reviewed_by = models.ForeignKey(
+    reviewed_by_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='reviewed_loans',
@@ -46,7 +46,7 @@ class Loan(models.Model):
     )
     decision_reason = models.CharField(max_length=255, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    completed_by = models.ForeignKey(
+    completed_by_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='completed_loans',
@@ -86,7 +86,7 @@ class Loan(models.Model):
                 name='loan_approval_fields_match_status',
             ),
             models.UniqueConstraint(
-                fields=('employee',),
+                fields=('borrower_employee',),
                 condition=models.Q(status__in=('PENDING', 'APPROVED')),
                 name='one_active_loan_per_employee',
             ),
@@ -101,3 +101,28 @@ class Loan(models.Model):
 
     def __str__(self):
         return self.transaction_id or str(self.loan_id)
+
+
+class LoanReview(models.Model):
+    class Decision(models.TextChoices):
+        APPROVED = 'APPROVED', 'Approved'
+        REJECTED = 'REJECTED', 'Rejected'
+
+    loan = models.ForeignKey(Loan, on_delete=models.PROTECT, related_name='review_history')
+    reviewed_by_employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='loan_review_history',
+    )
+    decision = models.CharField(max_length=10, choices=Decision.choices)
+    reviewed_at = models.DateTimeField(default=timezone.now)
+    decision_reason = models.CharField(max_length=255, blank=True)
+    approved_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    interest_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        db_table = 'loan_review'
+        ordering = ('-reviewed_at', '-id')
+
+    def __str__(self):
+        return f'{self.loan_id}: {self.decision} at {self.reviewed_at}'

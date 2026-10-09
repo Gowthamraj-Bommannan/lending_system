@@ -52,6 +52,9 @@ class ErrorMessages:
     REPAYMENT_PRINCIPAL_EXCEEDS_REMAINING = 'Principal repayment cannot exceed the loan remaining principal.'
     REPAYMENT_INSTALLMENTS_MUST_BE_PAID_IN_ORDER = 'Loan installments must be paid in order; submit the current unpaid installment.'
     REPAYMENT_AMOUNT_MUST_MATCH_INSTALLMENT = 'Repayment principal, interest, and total must match the scheduled installment.'
+    REPAYMENT_PRINCIPAL_CANNOT_BE_NEGATIVE = 'Principal amount cannot be negative.'
+    LUMP_SUM_AMOUNT_EXCEEDS_BALANCE = 'Lump-sum payment cannot exceed the remaining principal or interest balance.'
+    LUMP_SUM_MUST_CLEAR_INTEREST_WITH_FINAL_PRINCIPAL = 'A lump-sum payment that clears all principal must also clear all remaining scheduled interest.'
 
 
 class ErrorStatus:

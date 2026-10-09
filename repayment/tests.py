@@ -5,6 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from common.exceptions import ProjectException
 from contribution.models import Contribution
 from contribution.services import create_contribution
 from employee.models import Employee
@@ -18,6 +19,7 @@ from loan.services import (
 )
 
 from .models import Repayment
+from .services import create_lump_sum_repayment
 
 
 class RepaymentApiTests(TestCase):
@@ -79,7 +81,7 @@ class RepaymentApiTests(TestCase):
         principal = current['principal_amount'] if principal is None and current else Decimal(principal or '0.00')
         interest = current['interest_amount'] if interest is None and current else Decimal(interest or '0.00')
         total = principal + interest if total is None else Decimal(total)
-        self.authenticate(loan.employee)
+        self.authenticate(loan.borrower_employee)
         return self.client.post(
             '/api/repayments/',
             {
@@ -127,7 +129,7 @@ class RepaymentApiTests(TestCase):
         loan.refresh_from_db()
         self.assertEqual(loan.status, Loan.Status.COMPLETED)
         self.assertIsNotNone(loan.completed_at)
-        self.assertEqual(loan.completed_by_id, self.employee.pk)
+        self.assertEqual(loan.completed_by_employee_id, self.employee.pk)
         self.assertEqual(get_available_funds(), Decimal('30000.00'))
 
     def test_installment_schedule_matches_flat_interest_example(self):
@@ -147,6 +149,100 @@ class RepaymentApiTests(TestCase):
         self.assertEqual(current['total_amount'], Decimal('2750.00'))
         self.assertEqual(response.data['next_installment']['installment_number'], 2)
         self.assertEqual(response.data['next_installment']['total_amount'], Decimal('2750.00'))
+
+    def test_partial_lump_sum_is_recorded_separately_and_recalculates_schedule(self):
+        loan = self.make_approved_loan(amount=Decimal('30000.00'), term_months=12)
+        repayment = create_lump_sum_repayment(
+            employee=self.employee,
+            loan_id=loan.loan_id,
+            principal_amount=Decimal('5000.00'),
+            interest_amount=Decimal('500.00'),
+            total_amount=Decimal('5500.00'),
+        )
+
+        self.assertEqual(repayment.payment_type, Repayment.PaymentType.LUMP_SUM)
+        self.assertIsNone(repayment.installment_number)
+        loan.refresh_from_db()
+        schedule = get_loan_installment_schedule(loan)
+        self.assertEqual(schedule['current_installment']['installment_number'], 1)
+        self.assertEqual(schedule['current_installment']['principal_amount'], Decimal('2083.33'))
+        self.assertEqual(schedule['current_installment']['interest_amount'], Decimal('208.33'))
+        self.assertEqual(len(schedule['lump_sum_payments']), 1)
+        self.assertEqual(schedule['lump_sum_payments'][0]['payment_type'], 'LUMP_SUM')
+        self.assertEqual(get_available_funds(), Decimal('5000.00'))
+
+    def test_lump_sum_payoff_completes_loan_and_appears_with_installments(self):
+        loan = self.make_approved_loan(amount=Decimal('30000.00'), term_months=12)
+        repayment = create_lump_sum_repayment(
+            employee=self.employee,
+            loan_id=loan.loan_id,
+            principal_amount=Decimal('30000.00'),
+            interest_amount=Decimal('3000.00'),
+            total_amount=Decimal('33000.00'),
+        )
+
+        loan.refresh_from_db()
+        schedule = get_loan_installment_schedule(loan)
+        self.assertEqual(loan.status, Loan.Status.COMPLETED)
+        self.assertEqual(schedule['current_installment'], None)
+        self.assertEqual(schedule['next_installment'], None)
+        self.assertTrue(all(item['status'] == 'PAID' for item in schedule['installments']))
+        self.assertEqual(schedule['lump_sum_payments'][0]['transaction_id'], repayment.transaction_id)
+        self.assertEqual(get_available_funds(), Decimal('30000.00'))
+
+    def test_lump_sum_api_records_partial_payment_and_recalculates_schedule(self):
+        loan = self.make_approved_loan(amount=Decimal('30000.00'), term_months=12)
+        self.authenticate(self.employee)
+
+        response = self.client.post(
+            f'/api/loans/{loan.loan_id}/repayments/lump-sum/',
+            {
+                'principal_amount': '5000.00',
+                'interest_amount': '500.00',
+                'total_amount': '5500.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['payment_type'], Repayment.PaymentType.LUMP_SUM)
+        self.assertIsNone(response.data['installment_number'])
+        self.assertEqual(Repayment.objects.count(), 1)
+        self.assertEqual(get_available_funds(), Decimal('5000.00'))
+        schedule = get_loan_installment_schedule(loan)
+        self.assertEqual(len(schedule['lump_sum_payments']), 1)
+        self.assertEqual(schedule['current_installment']['principal_amount'], Decimal('2083.33'))
+
+    def test_lump_sum_api_full_payoff_completes_loan(self):
+        loan = self.make_approved_loan(amount=Decimal('30000.00'), term_months=12)
+        self.authenticate(self.employee)
+
+        response = self.client.post(
+            f'/api/loans/{loan.loan_id}/repayments/lump-sum/',
+            {
+                'principal_amount': '30000.00',
+                'interest_amount': '3000.00',
+                'total_amount': '33000.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        loan.refresh_from_db()
+        self.assertEqual(loan.status, Loan.Status.COMPLETED)
+        self.assertEqual(get_available_funds(), Decimal('30000.00'))
+
+    def test_full_principal_lump_sum_requires_all_remaining_interest(self):
+        loan = self.make_approved_loan(amount=Decimal('12000.00'), term_months=12)
+        with self.assertRaises(ProjectException):
+            create_lump_sum_repayment(
+                employee=self.employee,
+                loan_id=loan.loan_id,
+                principal_amount=Decimal('12000.00'),
+                interest_amount=Decimal('100.00'),
+                total_amount=Decimal('12100.00'),
+            )
+        self.assertEqual(Repayment.objects.count(), 0)
 
     def test_schedule_rounding_remainder_is_adjusted_in_final_installment(self):
         loan = self.make_approved_loan(amount=Decimal('10000.00'), term_months=3)
@@ -253,7 +349,7 @@ class RepaymentApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
         completed = Loan.objects.create(
-            employee=self.other_employee,
+            borrower_employee=self.other_employee,
             requested_amount=Decimal('10000.00'),
             request_reason='Completed test.',
             approved_amount=Decimal('10000.00'),
@@ -261,7 +357,7 @@ class RepaymentApiTests(TestCase):
             status=Loan.Status.COMPLETED,
             transaction_id='LOAN-COMPLETED-TEST',
             completed_at=timezone.now(),
-            completed_by=self.admin,
+            completed_by_employee=self.admin,
         )
         response = self.post_repayment(
             loan=completed,

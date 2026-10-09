@@ -10,7 +10,7 @@ from contribution.models import Contribution
 from contribution.services import create_contribution, cancel_contribution
 from employee.models import Employee, EmployeeRole
 
-from .models import Loan
+from .models import Loan, LoanReview
 from .services import approve_loan, create_loan, get_available_funds, reject_loan
 
 
@@ -80,7 +80,7 @@ class LoanApiTests(TestCase):
             format='json',
         )
         self.assertEqual(second.status_code, 400)
-        self.assertEqual(Loan.objects.filter(employee=self.employee).count(), 1)
+        self.assertEqual(Loan.objects.filter(borrower_employee=self.employee).count(), 1)
 
     def test_standard_loan_list_is_always_limited_to_requesting_user(self):
         my_response = self.request_loan()
@@ -180,6 +180,10 @@ class LoanApiTests(TestCase):
         self.assertEqual(loan.interest_rate, Decimal('10.00'))
         self.assertTrue(loan.transaction_id.startswith('LOAN-'))
         self.assertEqual(get_available_funds(), Decimal('5000.00'))
+        self.assertEqual(loan.review_history.count(), 1)
+        self.assertEqual(loan.review_history.first().decision, LoanReview.Decision.APPROVED)
+        self.assertEqual(approval.data['review_history'][0]['decision'], LoanReview.Decision.APPROVED)
+        self.assertEqual(approval.data['review_history'][0]['reviewed_by_employee_id'], self.approver.employee_id)
 
     def test_approval_rejects_amount_greater_than_request(self):
         create_contribution(employee=self.employee, amount=Decimal('30000.00'))
@@ -228,6 +232,23 @@ class LoanApiTests(TestCase):
         self.assertEqual(loan.status, Loan.Status.REJECTED)
         self.assertIsNone(loan.transaction_id)
         self.assertEqual(rejected.data['decision_reason'], 'Eligibility requirements were not met.')
+        self.assertEqual(loan.review_history.count(), 1)
+        self.assertEqual(loan.review_history.first().decision, LoanReview.Decision.REJECTED)
+        self.assertEqual(rejected.data['review_history'][0]['reviewed_by_employee_id'], self.approver.employee_id)
+
+    def test_failed_loan_decision_does_not_create_review_history(self):
+        response = self.request_loan()
+        loan = Loan.objects.get(loan_id=response.data['loan_id'])
+        self.authenticate(self.approver)
+
+        failed = self.client.post(
+            f'/api/loans/{loan.loan_id}/reject/',
+            {'reason': '   '},
+            format='json',
+        )
+
+        self.assertEqual(failed.status_code, 400)
+        self.assertEqual(loan.review_history.count(), 0)
 
     def test_approver_cannot_decide_own_request(self):
         EmployeeRole.objects.create(employee=self.employee, role=EmployeeRole.APPROVER)
@@ -242,7 +263,7 @@ class LoanApiTests(TestCase):
 
     def test_reapplication_wait_is_two_calendar_months(self):
         Loan.objects.create(
-            employee=self.employee,
+            borrower_employee=self.employee,
             requested_amount=Decimal('10000.00'),
             request_reason='Historical test reason.',
             approved_amount=Decimal('10000.00'),
@@ -255,11 +276,11 @@ class LoanApiTests(TestCase):
         response = self.request_loan()
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(Loan.objects.filter(employee=self.employee).count(), 1)
+        self.assertEqual(Loan.objects.filter(borrower_employee=self.employee).count(), 1)
 
     def test_reapplication_is_allowed_after_two_calendar_months(self):
         Loan.objects.create(
-            employee=self.employee,
+            borrower_employee=self.employee,
             requested_amount=Decimal('10000.00'),
             request_reason='Historical test reason.',
             approved_amount=Decimal('10000.00'),
@@ -272,7 +293,7 @@ class LoanApiTests(TestCase):
         response = self.request_loan()
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(Loan.objects.filter(employee=self.employee).count(), 2)
+        self.assertEqual(Loan.objects.filter(borrower_employee=self.employee).count(), 2)
 
     def test_cannot_cancel_contribution_needed_for_approved_loan(self):
         contribution = create_contribution(employee=self.employee, amount=Decimal('20000.00'))

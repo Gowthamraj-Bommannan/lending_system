@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Loan
+from .models import Loan, LoanReview
 
 
 class LoanRequestSerializer(serializers.Serializer):
@@ -9,19 +9,34 @@ class LoanRequestSerializer(serializers.Serializer):
     repayment_term_months = serializers.IntegerField(min_value=1, max_value=12)
 
 
-class LoanSerializer(serializers.ModelSerializer):
-    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    employee_email = serializers.EmailField(source='employee.email', read_only=True)
+class LoanReviewSerializer(serializers.ModelSerializer):
     reviewed_by_employee_id = serializers.CharField(
-        source='reviewed_by.employee_id',
+        source='reviewed_by_employee.employee_id',
+        read_only=True,
+    )
+
+    class Meta:
+        model = LoanReview
+        fields = (
+            'decision', 'reviewed_by_employee_id', 'reviewed_at', 'decision_reason',
+            'approved_amount', 'interest_rate',
+        )
+
+
+class LoanSerializer(serializers.ModelSerializer):
+    employee_id = serializers.CharField(source='borrower_employee.employee_id', read_only=True)
+    employee_email = serializers.EmailField(source='borrower_employee.email', read_only=True)
+    reviewed_by_employee_id = serializers.CharField(
+        source='reviewed_by_employee.employee_id',
         read_only=True,
         allow_null=True,
     )
     completed_by_employee_id = serializers.CharField(
-        source='completed_by.employee_id',
+        source='completed_by_employee.employee_id',
         read_only=True,
         allow_null=True,
     )
+    review_history = LoanReviewSerializer(many=True, read_only=True)
 
     class Meta:
         model = Loan
@@ -30,7 +45,7 @@ class LoanSerializer(serializers.ModelSerializer):
             'requested_amount', 'request_reason', 'repayment_term_months',
             'approved_amount', 'interest_rate', 'status',
             'requested_at', 'reviewed_at', 'reviewed_by_employee_id',
-            'decision_reason', 'completed_at', 'completed_by_employee_id',
+            'decision_reason', 'review_history', 'completed_at', 'completed_by_employee_id',
             'created_at', 'updated_at',
         )
         read_only_fields = fields
