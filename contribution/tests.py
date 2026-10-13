@@ -47,7 +47,7 @@ class ContributionServiceTests(TestCase):
             create_contribution(employee=self.employee, amount=Decimal('100.00'))
 
     def test_api_response_includes_request_correlation_id(self):
-        response = self.client.get('/api/contributions/summary/')
+        response = self.client.get('/api/contribution/summary/')
 
         self.assertEqual(response.status_code, 401)
         self.assertTrue(response['X-Request-ID'])
@@ -57,7 +57,7 @@ class ContributionServiceTests(TestCase):
         client.force_authenticate(user=self.employee)
 
         with self.assertLogs('common.middleware', level='INFO') as captured:
-            response = client.get('/api/contributions/summary/')
+            response = client.get('/api/contribution/summary/')
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(any(
@@ -72,7 +72,7 @@ class ContributionServiceTests(TestCase):
 
         with self.assertLogs('common.exceptions', level='WARNING') as captured:
             response = client.post(
-                '/api/contributions/',
+                '/api/contribution/',
                 {'amount': '40000.00'},
                 format='json',
             )
@@ -89,7 +89,7 @@ class ContributionServiceTests(TestCase):
         client.force_authenticate(user=self.employee)
 
         with self.assertLogs('common.exceptions', level='WARNING') as captured:
-            response = client.get('/api/employees/')
+            response = client.get('/api/employee/')
 
         self.assertEqual(response.status_code, 403)
         self.assertTrue(any(

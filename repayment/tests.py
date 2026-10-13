@@ -83,7 +83,7 @@ class RepaymentApiTests(TestCase):
         total = principal + interest if total is None else Decimal(total)
         self.authenticate(loan.borrower_employee)
         return self.client.post(
-            '/api/repayments/',
+            '/api/repayment/',
             {
                 'loan_id': str(loan.loan_id),
                 'installment_number': installment_number,
@@ -112,7 +112,7 @@ class RepaymentApiTests(TestCase):
         loan.refresh_from_db()
         self.assertEqual(loan.status, Loan.Status.APPROVED)
 
-        schedule_response = self.client.get(f'/api/loans/{loan.loan_id}/installments/')
+        schedule_response = self.client.get(f'/api/loan/{loan.loan_id}/installment/')
         self.assertEqual(schedule_response.status_code, 200)
         self.assertEqual(schedule_response.data['current_installment']['installment_number'], 2)
         self.assertEqual(schedule_response.data['next_installment']['installment_number'], 3)
@@ -136,7 +136,7 @@ class RepaymentApiTests(TestCase):
         loan = self.make_approved_loan(amount=Decimal('30000.00'), term_months=12)
         self.authenticate(self.employee)
 
-        response = self.client.get(f'/api/loans/{loan.loan_id}/installments/')
+        response = self.client.get(f'/api/loan/{loan.loan_id}/installment/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['repayment_method'], 'FLAT')
@@ -195,7 +195,7 @@ class RepaymentApiTests(TestCase):
         self.authenticate(self.employee)
 
         response = self.client.post(
-            f'/api/loans/{loan.loan_id}/repayments/lump-sum/',
+            f'/api/loan/{loan.loan_id}/repayment/lump-sum/',
             {
                 'principal_amount': '5000.00',
                 'interest_amount': '500.00',
@@ -218,7 +218,7 @@ class RepaymentApiTests(TestCase):
         self.authenticate(self.employee)
 
         response = self.client.post(
-            f'/api/loans/{loan.loan_id}/repayments/lump-sum/',
+            f'/api/loan/{loan.loan_id}/repayment/lump-sum/',
             {
                 'principal_amount': '30000.00',
                 'interest_amount': '3000.00',
@@ -311,7 +311,7 @@ class RepaymentApiTests(TestCase):
         self.authenticate(self.other_employee)
 
         response = self.client.post(
-            '/api/repayments/',
+            '/api/repayment/',
             {
                 'loan_id': str(loan.loan_id),
                 'installment_number': 1,
@@ -375,7 +375,7 @@ class RepaymentApiTests(TestCase):
         self.post_repayment(loan=other_loan)
 
         self.authenticate(self.employee)
-        response = self.client.get('/api/repayments/')
+        response = self.client.get('/api/repayment/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
@@ -384,7 +384,7 @@ class RepaymentApiTests(TestCase):
     def test_unknown_loan_is_not_found(self):
         self.authenticate()
         response = self.client.post(
-            '/api/repayments/',
+            '/api/repayment/',
             {
                 'loan_id': '6a1b0ce3-9c2a-4acf-a326-258d46d03210',
                 'installment_number': 1,

@@ -71,10 +71,10 @@ Use `python manage.py migrate` after pulling changes that include new migrations
 
 ## Main API routes
 
-- Employee/authentication APIs: `/api/auth/`, `/api/employees/`
-- Contributions: `/api/contributions/`
-- Loans and loan schedules: `/api/loans/`
-- Repayments: `/api/repayments/`
+- Employee/authentication APIs: `/api/auth/`, `/api/employee/`
+- Contributions: `/api/contribution/`
+- Loans and loan schedules: `/api/loan/`
+- Repayments: `/api/repayment/`
 
 Protected endpoints use JWT access tokens in the `Authorization: Bearer <access-token>` header. See [docs/PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md) for workflows, rules, and API details, and [docs/ERD.md](docs/ERD.md) for current and planned schema.
 

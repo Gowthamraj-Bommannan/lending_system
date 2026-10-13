@@ -40,7 +40,7 @@ class LoanApiTests(TestCase):
     def request_loan(self, amount='20000.00', term_months=12):
         self.authenticate(self.employee)
         return self.client.post(
-            '/api/loans/',
+            '/api/loan/',
             {
                 'requested_amount': amount,
                 'request_reason': 'Home repair expenses.',
@@ -71,7 +71,7 @@ class LoanApiTests(TestCase):
         first = self.request_loan()
         self.assertEqual(first.status_code, 201)
         second = self.client.post(
-            '/api/loans/',
+            '/api/loan/',
             {
                 'requested_amount': '10000.00',
                 'request_reason': 'Unexpected medical expenses.',
@@ -92,14 +92,14 @@ class LoanApiTests(TestCase):
         )
 
         self.authenticate(self.employee)
-        employee_response = self.client.get('/api/loans/')
+        employee_response = self.client.get('/api/loan/')
         self.assertEqual(
             [item['loan_id'] for item in employee_response.data],
             [my_loan_id],
         )
 
         self.authenticate(self.approver)
-        approver_response = self.client.get('/api/loans/')
+        approver_response = self.client.get('/api/loan/')
         self.assertEqual(
             [item['loan_id'] for item in approver_response.data],
             [str(other_loan.loan_id)],
@@ -124,7 +124,7 @@ class LoanApiTests(TestCase):
         approve_loan(loan=approved_loan, actor=self.approver)
 
         self.authenticate(self.approver)
-        response = self.client.get('/api/loans/review/')
+        response = self.client.get('/api/loan/review/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -139,7 +139,7 @@ class LoanApiTests(TestCase):
     def test_employee_cannot_access_review_queue(self):
         self.authenticate(self.employee)
 
-        response = self.client.get('/api/loans/review/')
+        response = self.client.get('/api/loan/review/')
 
         self.assertEqual(response.status_code, 403)
 
@@ -157,7 +157,7 @@ class LoanApiTests(TestCase):
             }
             if reason is not None:
                 payload['request_reason'] = reason
-            response = self.client.post('/api/loans/', payload, format='json')
+            response = self.client.post('/api/loan/', payload, format='json')
             self.assertEqual(response.status_code, 400)
         self.assertEqual(Loan.objects.count(), 0)
 
@@ -168,7 +168,7 @@ class LoanApiTests(TestCase):
 
         self.authenticate(self.approver)
         approval = self.client.post(
-            f'/api/loans/{loan.loan_id}/approve/',
+            f'/api/loan/{loan.loan_id}/approve/',
             {'approved_amount': '25000.00'},
             format='json',
         )
@@ -192,7 +192,7 @@ class LoanApiTests(TestCase):
         self.authenticate(self.approver)
 
         result = self.client.post(
-            f'/api/loans/{loan.loan_id}/approve/',
+            f'/api/loan/{loan.loan_id}/approve/',
             {'approved_amount': '25000.00'},
             format='json',
         )
@@ -208,7 +208,7 @@ class LoanApiTests(TestCase):
         loan = Loan.objects.get(loan_id=response.data['loan_id'])
         self.authenticate(self.approver)
 
-        result = self.client.post(f'/api/loans/{loan.loan_id}/approve/', {}, format='json')
+        result = self.client.post(f'/api/loan/{loan.loan_id}/approve/', {}, format='json')
 
         self.assertEqual(result.status_code, 400)
         loan.refresh_from_db()
@@ -222,7 +222,7 @@ class LoanApiTests(TestCase):
         self.authenticate(self.approver)
 
         rejected = self.client.post(
-            f'/api/loans/{loan.loan_id}/reject/',
+            f'/api/loan/{loan.loan_id}/reject/',
             {'reason': 'Eligibility requirements were not met.'},
             format='json',
         )
@@ -242,7 +242,7 @@ class LoanApiTests(TestCase):
         self.authenticate(self.approver)
 
         failed = self.client.post(
-            f'/api/loans/{loan.loan_id}/reject/',
+            f'/api/loan/{loan.loan_id}/reject/',
             {'reason': '   '},
             format='json',
         )
@@ -255,7 +255,7 @@ class LoanApiTests(TestCase):
         response = self.request_loan()
         loan = Loan.objects.get(loan_id=response.data['loan_id'])
 
-        result = self.client.post(f'/api/loans/{loan.loan_id}/reject/', {'reason': 'No'}, format='json')
+        result = self.client.post(f'/api/loan/{loan.loan_id}/reject/', {'reason': 'No'}, format='json')
 
         self.assertEqual(result.status_code, 400)
         loan.refresh_from_db()
@@ -322,7 +322,7 @@ class LoanApiTests(TestCase):
 
         self.authenticate(self.employee)
         result = self.client.post(
-            f'/api/loans/{loan.loan_id}/approve/',
+            f'/api/loan/{loan.loan_id}/approve/',
             {},
             format='json',
         )
@@ -341,7 +341,7 @@ class LoanApiTests(TestCase):
         approve_loan(loan=loan, actor=self.approver, approved_amount=Decimal('15000.00'))
         self.authenticate(self.employee)
 
-        response = self.client.get('/api/loans/funds/summary/')
+        response = self.client.get('/api/loan/funds/summary/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['active_contributions'], Decimal('30000.00'))

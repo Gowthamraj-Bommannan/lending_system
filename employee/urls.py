@@ -13,9 +13,9 @@ from .views import (
 urlpatterns = [
     path('auth/login/', LoginView.as_view(), name='login'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
-    path('employees/', EmployeeListCreateView.as_view(), name='employee-list-create'),
-    path('employees/<str:employee_id>/', EmployeeDetailView.as_view(), name='employee-detail'),
-    path('employees/<str:employee_id>/deactivate/', EmployeeDeactivateView.as_view(), name='employee-deactivate'),
-    path('employees/<str:employee_id>/roles/', EmployeeRoleAssignView.as_view(), name='employee-role-assign'),
-    path('employees/<str:employee_id>/roles/<str:role>/', EmployeeRoleRemoveView.as_view(), name='employee-role-remove'),
+    path('employee/', EmployeeListCreateView.as_view(), name='employee-list-create'),
+    path('employee/<str:employee_id>/', EmployeeDetailView.as_view(), name='employee-detail'),
+    path('employee/<str:employee_id>/deactivate/', EmployeeDeactivateView.as_view(), name='employee-deactivate'),
+    path('employee/<str:employee_id>/role/', EmployeeRoleAssignView.as_view(), name='employee-role-assign'),
+    path('employee/<str:employee_id>/role/<str:role>/', EmployeeRoleRemoveView.as_view(), name='employee-role-remove'),
 ]

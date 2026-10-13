@@ -112,13 +112,13 @@ All employee-management endpoints require a JWT issued to `admin@hassy.in`:
 ```text
 POST   /api/auth/login/
 POST   /api/auth/token/refresh/
-GET    /api/employees/
-POST   /api/employees/
-GET    /api/employees/{employee_id}/
-PATCH  /api/employees/{employee_id}/
-POST   /api/employees/{employee_id}/deactivate/
-POST   /api/employees/{employee_id}/roles/
-DELETE /api/employees/{employee_id}/roles/{role}/
+GET    /api/employee/
+POST   /api/employee/
+GET    /api/employee/{employee_id}/
+PATCH  /api/employee/{employee_id}/
+POST   /api/employee/{employee_id}/deactivate/
+POST   /api/employee/{employee_id}/role/
+DELETE /api/employee/{employee_id}/role/{role}/
 ```
 
 Employee creation accepts `first_name`, `last_name`, `date_of_birth`, and a list of roles. The generated initial password is not intended to remain in a production response.
@@ -128,11 +128,11 @@ Employee creation accepts `first_name`, `last_name`, `date_of_birth`, and a list
 An authenticated active employee can create and view contributions. Employees only see their own records. The super administrator can view all contributions and cancel them.
 
 ```text
-POST   /api/contributions/
-GET    /api/contributions/
-GET    /api/contributions/summary/
-GET    /api/contributions/{transaction_id}/
-POST   /api/contributions/{transaction_id}/cancel/
+POST   /api/contribution/
+GET    /api/contribution/
+GET    /api/contribution/summary/
+GET    /api/contribution/{transaction_id}/
+POST   /api/contribution/{transaction_id}/cancel/
 ```
 
 Contribution creation accepts:
@@ -164,23 +164,23 @@ The configured per-record contribution range is `10000.00` through `50000.00`; a
 
 ### Current loan APIs
 
-Employees can submit loan requests and `GET /api/loans/` always returns only the authenticated employee's own loans, including when that employee is an approver or administrator. Admins (superusers or employees with the `admin` role) and approvers use the separate review queue to see all pending and approved requests, and can approve or reject them. The requesting employee cannot decide their own request.
+Employees can submit loan requests and `GET /api/loan/` always returns only the authenticated employee's own loans, including when that employee is an approver or administrator. Admins (superusers or employees with the `admin` role) and approvers use the separate review queue to see all pending and approved requests, and can approve or reject them. The requesting employee cannot decide their own request.
 
 ```text
-POST   /api/loans/
-GET    /api/loans/
-GET    /api/loans/review/
-GET    /api/loans/funds/summary/
-GET    /api/loans/{loan_id}/
-GET    /api/loans/{loan_id}/installments/
-GET    /api/loans/{loan_id}/installments/next/
-POST   /api/loans/{loan_id}/approve/
-POST   /api/loans/{loan_id}/reject/
+POST   /api/loan/
+GET    /api/loan/
+GET    /api/loan/review/
+GET    /api/loan/funds/summary/
+GET    /api/loan/{loan_id}/
+GET    /api/loan/{loan_id}/installment/
+GET    /api/loan/{loan_id}/installment/next/
+POST   /api/loan/{loan_id}/approve/
+POST   /api/loan/{loan_id}/reject/
 ```
 
 The client supplies `requested_amount`, required `repayment_term_months` from 1 through 12, and a required, non-blank `request_reason` (maximum 1000 characters) when requesting a loan. The reason is retained on the loan record and shown to authorized viewers. Requests use a UUID `loan_id` for reference and start in `PENDING`; `transaction_id` remains `NULL` until approval. Loan statuses are `PENDING`, `APPROVED`, `REJECTED`, and `COMPLETED`; there is no `DISBURSED` status. Approvers may approve the requested amount or a lower amount, but not a higher amount. Approval snapshots the configured annual rate and creates the transaction ID. Rejection requires a reason, which is visible with the employee's loan record. Free-text request/rejection reasons are not included in application logs.
 
-`GET /api/loans/review/` is restricted to admins and approvers and returns loans in `PENDING` or `APPROVED` status across all employees. It is separate from the personal loan list.
+`GET /api/loan/review/` is restricted to admins and approvers and returns loans in `PENDING` or `APPROVED` status across all employees. It is separate from the personal loan list.
 
 Available funds are calculated as active contribution total minus remaining principal on approved loans. Approval checks and reserves funds transactionally; each recorded principal repayment increases available funds by the principal amount paid. When all approved principal is repaid, the loan automatically becomes `COMPLETED`; completion is no longer manually set through the loan API. Contribution cancellation is rejected if it would leave approved loans underfunded. No fund-account or ledger table is created.
 
@@ -188,21 +188,21 @@ New loan requests are rejected if the employee has a `PENDING` or `APPROVED` loa
 
 The current repayment plan is **flat annual interest with fixed principal installments**: interest is calculated on the original approved principal for the selected term (`approved_amount × annual rate × term_months ÷ 12`) and does not decrease as principal is repaid. Principal and total interest are split across the term, with any cent-rounding remainder applied to the last installment. For example, 30,000 at 10% p.a. over 12 months yields 2,500 principal plus 250 interest each month, or 2,750 total. This is not a reducing-balance EMI calculation.
 
-`GET /api/loans/{loan_id}/installments/` returns the full calculated schedule plus `current_installment` (first unpaid) and `next_installment`. `GET /api/loans/{loan_id}/installments/next/` returns only the first unpaid installment, or `null` if the loan has no unpaid installments. A pending loan has no schedule. Repayments must be submitted in installment order and match the calculated principal, interest, and total exactly.
+`GET /api/loan/{loan_id}/installments/` returns the full calculated schedule plus `current_installment` (first unpaid) and `next_installment`. `GET /api/loan/{loan_id}/installment/next/` returns only the first unpaid installment, or `null` if the loan has no unpaid installments. A pending loan has no schedule. Repayments must be submitted in installment order and match the calculated principal, interest, and total exactly.
 
 ### Current repayment APIs
 
-Only the employee who owns an approved loan can make repayments. `GET /api/repayments/` returns repayment records submitted by the authenticated employee.
+Only the employee who owns an approved loan can make repayments. `GET /api/repayment/` returns repayment records submitted by the authenticated employee.
 
 ```text
-POST   /api/repayments/
-GET    /api/repayments/
-POST   /api/loans/{loan_id}/repayments/lump-sum/
+POST   /api/repayment/
+GET    /api/repayment/
+POST   /api/loans/{loan_id}/repayment/lump-sum/
 ```
 
 The installment request supplies `loan_id`, `installment_number`, `principal_amount`, `interest_amount`, and `total_amount`. The installment must be the earliest unpaid installment, and the amounts must match the server-calculated schedule exactly. Principal must be positive and cannot exceed remaining principal; interest cannot be negative; total must equal principal plus interest.
 
-For a partial prepayment or full payoff outside the scheduled installment amount, use `POST /api/loans/{loan_id}/repayments/lump-sum/`. Submit `principal_amount`, `interest_amount`, and `total_amount`; the same owner, approval, balance, and arithmetic checks apply. This creates a `LUMP_SUM` repayment record (with no installment number). It appears separately in the loan schedule response, and outstanding principal/interest are redistributed across the installments that remain unpaid. If the lump sum pays the final principal, it must also cover all remaining scheduled flat interest, and the loan is completed. Interest amounts are recorded, but distribution to contributors is not implemented yet.
+For a partial prepayment or full payoff outside the scheduled installment amount, use `POST /api/loan/{loan_id}/repayment/lump-sum/`. Submit `principal_amount`, `interest_amount`, and `total_amount`; the same owner, approval, balance, and arithmetic checks apply. This creates a `LUMP_SUM` repayment record (with no installment number). It appears separately in the loan schedule response, and outstanding principal/interest are redistributed across the installments that remain unpaid. If the lump sum pays the final principal, it must also cover all remaining scheduled flat interest, and the loan is completed. Interest amounts are recorded, but distribution to contributors is not implemented yet.
 
 Lump-sum request example:
 
