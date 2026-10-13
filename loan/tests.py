@@ -341,7 +341,7 @@ class LoanApiTests(TestCase):
         approve_loan(loan=loan, actor=self.approver, approved_amount=Decimal('15000.00'))
         self.authenticate(self.employee)
 
-        response = self.client.get('/api/loan/funds/summary/')
+        response = self.client.get('/api/loan/fund/summary/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['active_contributions'], Decimal('30000.00'))

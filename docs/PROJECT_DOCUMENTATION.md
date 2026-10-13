@@ -170,7 +170,7 @@ Employees can submit loan requests and `GET /api/loan/` always returns only the 
 POST   /api/loan/
 GET    /api/loan/
 GET    /api/loan/review/
-GET    /api/loan/funds/summary/
+GET    /api/loan/fund/summary/
 GET    /api/loan/{loan_id}/
 GET    /api/loan/{loan_id}/installment/
 GET    /api/loan/{loan_id}/installment/next/
@@ -188,7 +188,7 @@ New loan requests are rejected if the employee has a `PENDING` or `APPROVED` loa
 
 The current repayment plan is **flat annual interest with fixed principal installments**: interest is calculated on the original approved principal for the selected term (`approved_amount × annual rate × term_months ÷ 12`) and does not decrease as principal is repaid. Principal and total interest are split across the term, with any cent-rounding remainder applied to the last installment. For example, 30,000 at 10% p.a. over 12 months yields 2,500 principal plus 250 interest each month, or 2,750 total. This is not a reducing-balance EMI calculation.
 
-`GET /api/loan/{loan_id}/installments/` returns the full calculated schedule plus `current_installment` (first unpaid) and `next_installment`. `GET /api/loan/{loan_id}/installment/next/` returns only the first unpaid installment, or `null` if the loan has no unpaid installments. A pending loan has no schedule. Repayments must be submitted in installment order and match the calculated principal, interest, and total exactly.
+`GET /api/loan/{loan_id}/installment/` returns the full calculated schedule plus `current_installment` (first unpaid) and `next_installment`. `GET /api/loan/{loan_id}/installment/next/` returns only the first unpaid installment, or `null` if the loan has no unpaid installments. A pending loan has no schedule. Repayments must be submitted in installment order and match the calculated principal, interest, and total exactly.
 
 ### Current repayment APIs
 
@@ -197,7 +197,7 @@ Only the employee who owns an approved loan can make repayments. `GET /api/repay
 ```text
 POST   /api/repayment/
 GET    /api/repayment/
-POST   /api/loans/{loan_id}/repayment/lump-sum/
+POST   /api/loan/{loan_id}/repayment/lump-sum/
 ```
 
 The installment request supplies `loan_id`, `installment_number`, `principal_amount`, `interest_amount`, and `total_amount`. The installment must be the earliest unpaid installment, and the amounts must match the server-calculated schedule exactly. Principal must be positive and cannot exceed remaining principal; interest cannot be negative; total must equal principal plus interest.

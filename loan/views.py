@@ -11,10 +11,9 @@ from contribution.models import Contribution
 from .models import Loan
 from .permissions import IsActiveEmployee, IsLoanAdminOrApprover
 from .serializers import (
-    LoanApprovalSerializer,
-    LoanRejectionSerializer,
     LoanRequestSerializer,
     LoanSerializer,
+    LoanDecisionSerializer
 )
 from .services import (
     approve_loan,
@@ -112,8 +111,8 @@ class LoanFundsSummaryView(APIView):
         })
 
 
-class LoanApproveView(generics.GenericAPIView):
-    serializer_class = LoanApprovalSerializer
+class LoanDecisionView(generics.GenericAPIView):
+    serializer_class = LoanDecisionSerializer
     permission_classes = (IsLoanAdminOrApprover,)
     queryset = Loan.objects.all()
     lookup_field = 'loan_id'
@@ -122,29 +121,20 @@ class LoanApproveView(generics.GenericAPIView):
         loan = self.get_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        loan = approve_loan(
-            loan=loan,
-            actor=request.user,
-            **serializer.validated_data,
-        )
-        return Response(LoanSerializer(loan).data)
+        decision = serializer.validated_data
 
-
-class LoanRejectView(generics.GenericAPIView):
-    serializer_class = LoanRejectionSerializer
-    permission_classes = (IsLoanAdminOrApprover,)
-    queryset = Loan.objects.all()
-    lookup_field = 'loan_id'
-
-    def post(self, request, *args, **kwargs):
-        loan = self.get_object()
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        loan = reject_loan(
-            loan=loan,
-            actor=request.user,
-            reason=serializer.validated_data['reason'],
-        )
+        if decision['action'] == 'approve':
+            loan = approve_loan(
+                loan=loan,
+                actor=request.user,
+                approved_amount=decision.get('approved_amount'),
+            )
+        else:
+            loan = reject_loan(
+                loan=loan,
+                actor=request.user,
+                reason=decision['reason'],
+            )
         return Response(LoanSerializer(loan).data)
 
 

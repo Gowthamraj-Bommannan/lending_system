@@ -51,13 +51,54 @@ class LoanSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class LoanApprovalSerializer(serializers.Serializer):
+# class LoanApprovalSerializer(serializers.Serializer):
+#     approved_amount = serializers.DecimalField(
+#         max_digits=12,
+#         decimal_places=2,
+#         required=False,
+#     )
+
+
+# class LoanRejectionSerializer(serializers.Serializer):
+#     reason = serializers.CharField(max_length=255, required=True, allow_blank=False, trim_whitespace=True)
+
+
+class LoanDecisionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=('approve', 'reject'))
     approved_amount = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
         required=False,
     )
+    reason = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=False,
+        trim_whitespace=True
+    )
 
+    def validate(self, attrs):
+        action = attrs['action']
 
-class LoanRejectionSerializer(serializers.Serializer):
-    reason = serializers.CharField(max_length=255, required=True, allow_blank=False, trim_whitespace=True)
+        if action == 'approve':
+            if 'reason' in attrs:
+                raise serializers.ValidationError(
+                    {
+                        'reason': 'Reason not required for approving a loan.'
+                    }
+                )
+        elif action == 'reject':
+            if 'approved_amount' in attrs:
+                raise serializers.ValidationError(
+                    {
+                        'approved_amount': 'Approved amount not required for rejecting a loan.'
+                    }
+                )
+
+            if 'reason' not in attrs:
+                raise serializers.ValidationError(
+                    {
+                        'reason': 'Reason is required for rejecting a loan.'
+                    }
+                )
+        return attrs
