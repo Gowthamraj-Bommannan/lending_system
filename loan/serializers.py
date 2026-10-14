@@ -51,18 +51,6 @@ class LoanSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-# class LoanApprovalSerializer(serializers.Serializer):
-#     approved_amount = serializers.DecimalField(
-#         max_digits=12,
-#         decimal_places=2,
-#         required=False,
-#     )
-
-
-# class LoanRejectionSerializer(serializers.Serializer):
-#     reason = serializers.CharField(max_length=255, required=True, allow_blank=False, trim_whitespace=True)
-
-
 class LoanDecisionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=('approve', 'reject'))
     approved_amount = serializers.DecimalField(

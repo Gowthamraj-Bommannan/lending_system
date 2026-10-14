@@ -4,6 +4,7 @@ from django.db.models import Sum
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
 
 from employee.models import EmployeeRole
 from contribution.models import Contribution
@@ -30,6 +31,33 @@ def _can_review(user):
         role__in=(EmployeeRole.ADMIN, EmployeeRole.APPROVER),
     ).exists()
 
+def _filter_loans_by_status(queryset, request):
+    statuses = request.query_params.getlist('status')
+
+    if not statuses:
+        return queryset
+
+    if len(statuses) != 1:
+        raise ValidationError({
+            'status': 'Only one status filter is allowed at a time.',
+        })
+
+    status_value = statuses[0].strip().upper()
+
+    if status_value == 'ALL':
+        return queryset
+
+    valid_statuses = Loan.Status.values
+
+    if status_value not in valid_statuses:
+        raise ValidationError({
+            'status': (
+                f'Invalid status filter. Valid values are: '
+                f'{", ".join(valid_statuses)}, ALL.'
+            ),
+        })
+    return queryset.filter(status=status_value)
+
 
 class LoanListCreateView(generics.ListCreateAPIView):
     permission_classes = (IsActiveEmployee,)
@@ -41,7 +69,10 @@ class LoanListCreateView(generics.ListCreateAPIView):
         queryset = Loan.objects.select_related(
             'borrower_employee', 'reviewed_by_employee', 'completed_by_employee',
         ).prefetch_related('review_history')
-        return queryset.filter(borrower_employee=self.request.user)
+        return _filter_loans_by_status(
+            queryset.filter(borrower_employee=self.request.user),
+            self.request,
+        )
 
     def create(self, request, *args, **kwargs):
         request_serializer = self.get_serializer(data=request.data)
@@ -88,11 +119,10 @@ class LoanReviewListView(generics.ListAPIView):
     permission_classes = (IsLoanAdminOrApprover,)
 
     def get_queryset(self):
-        return Loan.objects.select_related(
+        queryset = Loan.objects.select_related(
             'borrower_employee', 'reviewed_by_employee', 'completed_by_employee',
-        ).prefetch_related('review_history').filter(
-            status__in=(Loan.Status.PENDING, Loan.Status.APPROVED),
-        )
+        ).prefetch_related('review_history')
+        return _filter_loans_by_status(queryset, self.request)
 
 
 class LoanFundsSummaryView(APIView):
