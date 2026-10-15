@@ -308,6 +308,9 @@ def approve_loan(*, loan, actor, approved_amount=None):
         approved_amount=approved_amount,
         interest_rate=loan.interest_rate,
     )
+    from ledger_entry.services import record_loan_reservation
+
+    record_loan_reservation(loan=loan, actor=actor)
     loan_id = str(loan.loan_id)
     transaction.on_commit(
         lambda: logger.info(

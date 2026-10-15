@@ -11,7 +11,10 @@ from common.lending_rules import MAXIMUM_CONTRIBUTION, MINIMUM_CONTRIBUTION
 from common.logging_utils import get_log_actor_key
 
 from .models import Contribution
-
+from ledger_entry.services import (
+    record_contribution_credit,
+    record_contribution_reversal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,11 @@ def create_contribution(*, employee, amount, reference='', remarks=''):
         reference=reference,
         remarks=remarks,
     )
+    record_contribution_credit(
+        contribution=contribution,
+        actor=employee,
+    )
+
     transaction_id = contribution.transaction_id
     actor_key = get_log_actor_key(employee)
     transaction.on_commit(
@@ -99,6 +107,10 @@ def cancel_contribution(*, contribution, cancelled_by, reason):
     contribution.save(update_fields=(
         'status', 'cancelled_at', 'cancelled_by', 'cancellation_reason', 'updated_at',
     ))
+    record_contribution_reversal(
+        contribution=contribution,
+        actor=cancelled_by,
+    )
     transaction_id = contribution.transaction_id
     owner_key = get_log_actor_key(contribution.contributor_employee)
     transaction.on_commit(

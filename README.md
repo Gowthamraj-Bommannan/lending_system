@@ -75,6 +75,7 @@ Use `python manage.py migrate` after pulling changes that include new migrations
 - Contributions: `/api/contribution/`
 - Loans and loan schedules: `/api/loan/`
 - Repayments: `/api/repayment/`
+- Ledger entries (superuser only): `/api/ledger/`
 
 Protected endpoints use JWT access tokens in the `Authorization: Bearer <access-token>` header. See [docs/PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md) for workflows, rules, and API details, and [docs/ERD.md](docs/ERD.md) for current and planned schema.
 

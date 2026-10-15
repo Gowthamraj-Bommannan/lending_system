@@ -128,6 +128,9 @@ def create_repayment(
         interest_amount=interest_amount,
         total_amount=total_amount,
     )
+    from ledger_entry.services import record_repayment_entries
+
+    record_repayment_entries(repayment=repayment, actor=employee)
     completed = _complete_loan_if_fully_paid(loan, employee)
     if completed:
         message = 'Final principal repayment recorded; loan completed successfully.'
@@ -199,6 +202,9 @@ def create_lump_sum_repayment(
         interest_amount=interest_amount,
         total_amount=total_amount,
     )
+    from ledger_entry.services import record_repayment_entries
+
+    record_repayment_entries(repayment=repayment, actor=employee)
     completed = _complete_loan_if_fully_paid(loan, employee)
     if completed:
         message = 'Lump-sum payoff recorded; loan completed successfully.'

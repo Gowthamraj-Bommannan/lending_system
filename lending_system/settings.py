@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'contribution.apps.ContributionConfig',
     'loan.apps.LoanConfig',
     'repayment.apps.RepaymentConfig',
+    'ledger_entry.apps.LedgerEntryConfig',
 ]
 
 MIDDLEWARE = [

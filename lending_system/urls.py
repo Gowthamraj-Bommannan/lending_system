@@ -23,4 +23,5 @@ urlpatterns = [
     path('api/contribution/', include('contribution.urls')),
     path('api/loan/', include('loan.urls')),
     path('api/repayment/', include('repayment.urls')),
+    path('api/ledger/', include('ledger_entry.urls')),
 ]

@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This Django application provides employee authentication and administration, employee contributions, loan requests and decisions, loan repayments, and a calculated available-funds balance. Ledger/accounting and contributor interest allocation remain future work.
+This Django application provides employee authentication and administration, employee contributions, loan requests and decisions, loan repayments, an append-only ledger audit trail, and a calculated available-funds balance. Contributor interest allocation remains future work.
 
 This is a learning project. Version 1 uses an internal ledger and does not move real money through a bank or payment provider.
 
@@ -22,12 +22,14 @@ This is a learning project. Version 1 uses an internal ledger and does not move 
 - Employee contribution APIs with automatic transaction IDs and cancellation history.
 - Loan request, approval, rejection, repayment, and available-funds APIs.
 - Loan approval reserves funds by reducing the calculated available balance.
+- Append-only ledger entries are recorded for contributions, cancellations, loan reservations, and repayment principal/interest.
+- Superuser-only ledger API and read-only Django admin access.
 - Centralized project exception handling and API error responses.
 
 ### Planned lending features
 
 - Monthly or yearly allocation of collected interest to contributors.
-- Append-only ledger-based fund audit and reconciliation.
+- Reconciliation of the ledger balance against the independently calculated available-funds balance.
 
 ### Excluded
 
@@ -50,7 +52,7 @@ This is a learning project. Version 1 uses an internal ledger and does not move 
 
 ## 3. Architecture
 
-Use a **modular monolith**: one Django project with separate `employee`, `contribution`, `loan`, and `repayment` Django apps, plus shared utilities in `common`.
+Use a **modular monolith**: one Django project with separate `employee`, `contribution`, `loan`, `repayment`, and `ledger_entry` Django apps, plus shared utilities in `common`.
 
 ```text
 Client
@@ -68,7 +70,7 @@ Client
 - Permissions enforce employee, approver, and administrator access.
 - PostgreSQL is the configured database for this project.
 
-Current app responsibilities: `employee` owns identity and roles; `contribution` owns contribution records and cancellation; `loan` owns loan requests and decisions; `repayment` owns repayment records and service-layer loan balance changes; `common` owns fixed lending rules, shared errors, and logging. Ledger and contributor interest distribution are not implemented yet.
+Current app responsibilities: `employee` owns identity and roles; `contribution` owns contribution records and cancellation; `loan` owns loan requests and decisions; `repayment` owns repayment records and service-layer loan balance changes; `ledger_entry` owns immutable audit entries; `common` owns fixed lending rules, shared errors, and logging. Contributor interest distribution is not implemented yet.
 
 ## 4. Authentication and Authorization
 
@@ -182,7 +184,7 @@ The client supplies `requested_amount`, required `repayment_term_months` from 1 
 
 `GET /api/loan/review/` is restricted to admins and approvers and returns loans in `PENDING` or `APPROVED` status across all employees. It is separate from the personal loan list.
 
-Available funds are calculated as active contribution total minus remaining principal on approved loans. Approval checks and reserves funds transactionally; each recorded principal repayment increases available funds by the principal amount paid. When all approved principal is repaid, the loan automatically becomes `COMPLETED`; completion is no longer manually set through the loan API. Contribution cancellation is rejected if it would leave approved loans underfunded. No fund-account or ledger table is created.
+Available funds are calculated as active contribution total minus remaining principal on approved loans. Approval checks and reserves funds transactionally; each recorded principal repayment increases available funds by the principal amount paid. When all approved principal is repaid, the loan automatically becomes `COMPLETED`; completion is no longer manually set through the loan API. Contribution cancellation is rejected if it would leave approved loans underfunded. The separate ledger records contribution credits/reversals, loan reservations, and principal/interest repayment credits in the same database transaction as each source operation. Its net balance includes collected interest and is an audit/reconciliation figure; it does not replace the existing available-funds calculation.
 
 New loan requests are rejected if the employee has a `PENDING` or `APPROVED` loan, requests an amount outside configured bounds, or has not completed the two-calendar-month wait after their most recent completed loan. Month-end addition clamps to the final valid day in the resulting month.
 
@@ -215,6 +217,18 @@ Lump-sum request example:
 ```
 
 Each saved repayment receives a unique, system-generated `transaction_id` such as `REPAY-20260930-12AB34CD56EF`. Clients must not send this field; it is returned in the repayment response and can be used as the human-readable payment reference.
+
+### Ledger APIs
+
+Ledger records are created by the contribution, loan-approval, and repayment service workflows; clients cannot create or edit entries through the API. Only the superuser can read these endpoints:
+
+```text
+GET   /api/ledger/
+GET   /api/ledger/summary/
+GET   /api/ledger/{entry_id}/
+```
+
+Entries record direction (`CREDIT` or `DEBIT`), positive amount, source transaction, recording employee, and event timestamp. The database enforces entry-type/source and entry-type/direction combinations and prevents duplicate postings for one source/type. Initial migrations backfill existing contributions, cancellations, approved loans with a recorded reviewer, and repayments. Later corrections must be represented by reversal entries rather than editing or deleting ledger history.
 
 ### API error format
 
@@ -320,13 +334,13 @@ Loan API responses include a read-only `review_history` collection so borrowers 
 - `total_amount` (database constraint enforces principal plus interest)
 - `paid_at`
 
-There are currently no active `InterestAllocation`, `FundAccount`, or ledger models. The earlier applied draft loan migration created legacy fund tables in some databases; cleanup removes them when empty and preserves existing data rather than deleting it. All money values use `Decimal`. Available funds are calculated from active contributions minus remaining approved-loan principal.
+There are currently no active `InterestAllocation` or `FundAccount` models. `LedgerEntry` stores immutable contribution, cancellation, loan-reservation, principal-repayment, and interest-repayment events. Its migration backfills existing financial records where source attribution is available. The earlier applied draft loan migration created legacy fund tables in some databases; cleanup removes them when empty and preserves existing data rather than deleting it. All money values use `Decimal`. Available funds continue to be calculated from active contributions minus remaining approved-loan principal; the ledger is an audit/reconciliation record and its balance also includes collected interest.
 
-Contribution cancellation updates status and retains cancellation metadata instead of deleting the contribution. The Django admin is configured not to delete contributions, loans, or repayments. A formal reversal workflow is not yet implemented because the ledger/reversal design is deferred.
+Contribution cancellation updates status, retains cancellation metadata, and posts a debit reversal entry instead of deleting the contribution. The Django admin is configured not to delete contributions, loans, repayments, or ledger entries.
 
-## 7. Conceptual Future ERD (not current schema)
+## 7. Conceptual Future Interest-Allocation ERD
 
-The diagram below is a future design reference for interest allocation and ledger tables. Employee, contribution, loan, and repayment tables are now implemented. The actual current schema is documented in `docs/ERD.md`.
+The diagram below is a future design reference for interest allocation only. Employee, contribution, loan, repayment, and ledger tables are implemented. The actual current schema is documented in `docs/ERD.md`.
 
 `EMPLOYEE` is one custom Django user table that combines authentication and employee information.
 
@@ -337,8 +351,6 @@ erDiagram
     LOAN ||--o{ REPAYMENT : receives
     REPAYMENT ||--o{ INTEREST_ALLOCATION : creates
     EMPLOYEE ||--o{ INTEREST_ALLOCATION : receives
-    EMPLOYEE ||--o{ LEDGER_ENTRY : owns
-    LOAN ||--o{ LEDGER_ENTRY : records
 
     EMPLOYEE {
         int id PK
@@ -390,15 +402,6 @@ erDiagram
         datetime created_at
     }
 
-    LEDGER_ENTRY {
-        int id PK
-        int employee_id FK
-        int loan_id FK
-        string entry_type
-        decimal amount
-        string reference
-        datetime created_at
-    }
 ```
 
 ## 7. Business Rules
@@ -467,16 +470,15 @@ erDiagram
 2. The service validates ownership, status, positive principal, non-negative interest, total arithmetic, and remaining principal.
 3. The repayment record is saved, and the principal portion increases available funds.
 4. When the approved principal is fully repaid, the service completes the loan automatically.
-5. Contributor interest allocation and ledger posting remain future work.
+5. Contributor interest allocation remains future work; ledger postings are written atomically with the source contribution, loan approval, or repayment.
 
 ## 10. Implementation Order
 
 1. Activate the environment: `source venv/bin/activate`.
 2. Install dependencies: `pip install -r requirements.txt`.
-3. Run checks/tests and apply migrations.
+3. Run checks and apply migrations.
 4. Add periodic interest allocation to contributors after agreeing on the distribution basis and period.
-5. Add a durable ledger and reconciliation process in a separately reviewed accounting app.
-6. Remove development credentials/configuration and review production security settings before deployment.
+5. Reconcile the ledger summary with available funds and review production security before deployment.
 
 ## 11. Minimum Tests
 
@@ -498,4 +500,4 @@ erDiagram
 
 ## 12. Definition of Done
 
-The current employee, contribution, and initial loan-request/decision scope is complete when the APIs, permissions, funding rules, and status transitions are covered by automated tests. Repayment records, repayment-verified completion, interest distribution, and ledger history remain future scope.
+The employee, contribution, loan, repayment, and ledger scope is implemented. Automated coverage and operational reconciliation remain important validation work; contributor interest distribution remains future scope.

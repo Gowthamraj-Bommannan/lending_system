@@ -4,7 +4,7 @@ This document separates what is **implemented in the configured PostgreSQL datab
 
 ## Application tables
 
-The application's six domain tables are `employee`, `employee_role`, `contribution`, `loan`, `loan_review`, and `repayment`. No organization, fund-account, ledger-entry, or interest-allocation table exists in the current physical database.
+The application's seven domain tables are `employee`, `employee_role`, `contribution`, `loan`, `loan_review`, `repayment`, and `ledger_entry`. No organization, fund-account, or interest-allocation table exists in the current physical database.
 
 ```mermaid
 erDiagram
@@ -18,6 +18,10 @@ erDiagram
     EMPLOYEE ||--o{ LOAN_REVIEW : reviews
     EMPLOYEE ||--o{ REPAYMENT : records
     LOAN ||--o{ REPAYMENT : receives
+    EMPLOYEE ||--o{ LEDGER_ENTRY : records
+    CONTRIBUTION o|--o{ LEDGER_ENTRY : source_contribution
+    LOAN o|--o{ LEDGER_ENTRY : source_loan
+    REPAYMENT o|--o{ LEDGER_ENTRY : source_repayment
 
     EMPLOYEE {
         bigint id PK
@@ -104,11 +108,24 @@ erDiagram
         datetime paid_at
         datetime created_at
     }
+
+    LEDGER_ENTRY {
+        bigint id PK
+        uuid entry_id UK
+        varchar entry_type
+        varchar direction
+        decimal amount
+        bigint contribution_id FK "nullable"
+        bigint loan_id FK "nullable"
+        bigint repayment_id FK "nullable"
+        bigint recorded_by_id FK
+        datetime created_at
+    }
 ```
 
 ## Complete lending domain (current + planned apps)
 
-The following is the target domain ERD across the current and future app boundaries. `EMPLOYEE`, `EMPLOYEE_ROLE`, `CONTRIBUTION`, `LOAN`, `LOAN_REVIEW`, and `REPAYMENT` are implemented. `INTEREST_ALLOCATION` and `LEDGER_ENTRY` are proposed for future accounting work and must not be treated as deployed tables yet. The `_PLANNED` suffixes in this diagram label future entities; they are not literal Django table names.
+The following is the target domain ERD across the current and future app boundaries. `EMPLOYEE`, `EMPLOYEE_ROLE`, `CONTRIBUTION`, `LOAN`, `LOAN_REVIEW`, `REPAYMENT`, and `LEDGER_ENTRY` are implemented. `INTEREST_ALLOCATION` remains planned and must not be treated as a deployed table. The `_PLANNED` suffixes in this diagram label future entities; they are not literal Django table names.
 
 ```mermaid
 erDiagram
@@ -122,6 +139,7 @@ erDiagram
     EMPLOYEE ||--o{ LOAN_REVIEW : reviews
     LOAN ||--o{ REPAYMENT : repaid_by
     EMPLOYEE ||--o{ REPAYMENT : records_payment
+    EMPLOYEE ||--o{ LEDGER_ENTRY : records
     REPAYMENT ||--o{ INTEREST_ALLOCATION : allocates_interest
     EMPLOYEE ||--o{ INTEREST_ALLOCATION : receives_interest
     CONTRIBUTION o|--o{ LEDGER_ENTRY : source_contribution
@@ -214,12 +232,14 @@ erDiagram
 
     LEDGER_ENTRY {
         bigint id PK
+        uuid entry_id UK
         varchar entry_type
         varchar direction
         decimal amount
         bigint contribution_id FK
         bigint loan_id FK
         bigint repayment_id FK
+        bigint recorded_by_id FK
         datetime created_at
     }
 ```
@@ -232,10 +252,11 @@ erDiagram
 | `contribution` | `contribution` | Implemented contributions and cancellation history. Contributions are active immediately. |
 | `loan` | `loan`, `loan_review` | Implemented requests, current decision snapshot, and approval/rejection history. Fully repaid loans transition automatically to `COMPLETED`; no `DISBURSED` status. |
 | `repayment` | `repayment` | Implemented borrower repayment records, principal balance validation, and automatic loan completion. |
-| Future interest/accounting app | `interest_allocation`, `ledger_entry` | Proposed distribution audit and append-only fund transaction history; not implemented. |
+| `ledger_entry` | `ledger_entry` | Implemented append-only fund event audit; populated by source workflows and migration backfill. |
+| Future interest allocation app | `interest_allocation` | Planned contributor interest distribution audit; not implemented. |
 | `common` | No database tables | Shared rules, exceptions, logging, and utilities. |
 
-There is no `organization` table: this installation represents one organization and uses fixed rules in configuration. A separate `FundAccount` table is also not part of the current or required target diagram; the current available-funds value is derived. If a future ledger becomes the authoritative balance source, its posting and balance-reconciliation policy should be agreed before implementation.
+There is no `organization` table: this installation represents one organization and uses fixed rules in configuration. A separate `FundAccount` table is also not part of the current or required target diagram; the current available-funds value is derived independently from contributions, approved loans, and principal repayments. The ledger is an audit/reconciliation history and its net balance includes posted interest credits.
 
 ## Django authorization bridge
 
